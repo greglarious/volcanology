@@ -5,6 +5,7 @@ import time
 import datetime
 import requests
 import sys
+import holidays
 from pyHS100 import SmartPlug
 from pprint import pformat as pf
 
@@ -12,10 +13,12 @@ from pprint import pformat as pf
 # read config items from file
 # 
 Config = ConfigParser.ConfigParser()
-config_file = "jenkins_scan.ini"
+config_file = "volcanology.ini"
 if len(sys.argv) > 1 and len(sys.argv[1]) > 0:
   config_file = sys.argv[1]
 Config.read(config_file)
+
+buildHolidays = holidays.UnitedStates()
 
 #
 # control bubble machine via particle.io photon
@@ -110,13 +113,20 @@ class JenkinsScanner(object):
 
   def isBusinessHours(self):
     now = datetime.datetime.now()
-    # check holiday
+
+    if now in buildHolidays:
+      print('build holiday')
+      return False
 
     dayNum = datetime.datetime.today().weekday()
-    #print('cur hour:%d min:%d max: %d' % (now.hour, self.MIN_BUS_HOUR, self.MAX_BUS_HOUR) )
-    if dayNum < 5 and now.hour >= self.MIN_BUS_HOUR and now.hour <= self.MAX_BUS_HOUR:
+    if dayNum >= 5:
+      print('build weekend')
+      return False
+
+    if now.hour >= self.MIN_BUS_HOUR and now.hour <= self.MAX_BUS_HOUR:
       return True
     else:
+      print('build outside of hours')
       return False
 
   def analyzeJob(self, job):
