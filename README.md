@@ -5,7 +5,7 @@ Scans a Jenkins view for list of builds and status.
 - When all builds succeed, activate the "green" indicators
 - When builds are failing activate the "red" indicators
 - Once a build fails, it has to succeed to qualify for clearing the red status
-- includes implementation for controlling a TP Link HS100
+- includes implementation for controlling a (TP Link HS100)(http://www.tp-link.com/us/products/details/cat-5516_HS100.html)
 - includes implementation for making rest calls to a [particle photon](https://www.particle.io/products/hardware/photon-wifi-dev-kit)
 - includes photon script to activate a bubble machine if builds are fixed quickly after failing
 
