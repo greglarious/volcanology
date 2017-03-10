@@ -105,12 +105,18 @@ class HS100Plug(object):
   def indicate(self):
     if self.enabled:
       logger.debug('plug:%s turn on' % self.name)
-      self.plug.turn_on()
+      try:
+        self.plug.turn_on()
+      except: # catch *all* exceptions
+        logger.exception("exception in indicate" )
 
   def off(self):
     if self.enabled:
       logger.debug('plug:%s turn off' % self.name)
-      self.plug.turn_off()
+      try:
+        self.plug.turn_off()
+      except: # catch *all* exceptions
+        logger.exception("exception in off" )
  
 #
 # control bubble machine via particle.io photon
@@ -256,6 +262,9 @@ config.read(configFile)
 waitTime = 30
 scanner = JenkinsScanner(config)
 while True:
-  scanner.scanJobs()
-  scanner.summarizeJobs()
+  try:
+    scanner.scanJobs()
+    scanner.summarizeJobs()
+  except: # catch *all* exceptions
+      logger.exception("exception in loop" )
   time.sleep(waitTime)
