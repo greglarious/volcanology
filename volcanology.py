@@ -9,21 +9,13 @@ import holidays
 from pyHS100 import SmartPlug
 from pprint import pformat as pf
 
-# 
-# read config items from file
-# 
-config = ConfigParser.ConfigParser()
-configFile = "volcanology.ini"
-if len(sys.argv) > 1 and len(sys.argv[1]) > 0:
-  configFile = sys.argv[1]
-config.read(configFile)
-
 #
 # takes summary of jenkins status and communicates to a series of external indicators
 #
 class JenkinsIndicator(object):
 
-  def __init__(self):
+  def __init__(self, config):
+    self.config = config
     self.statusTrackers = dict()
     self.indicators = dict()
     self.indicatorsEnabled = config.getboolean("Indicators", "Enabled")
@@ -40,7 +32,7 @@ class JenkinsIndicator(object):
   def loadPhotonStatus(self):
     for statusName in dict(config.items(PhotonStatus.configSection)):
       print('loading photon status:%s' % statusName)
-      curStatus = PhotonStatus(statusName)
+      curStatus = PhotonStatus(statusName, self.config)
       self.statusTrackers[statusName] = curStatus
 
   # 
@@ -48,7 +40,7 @@ class JenkinsIndicator(object):
   def loadHS100Plugs(self):
     for indicatorName in dict(config.items(HS100Plug.configSection)):
       print('loading hs100 indicator:%s' % indicatorName)
-      curIndicator = HS100Plug(indicatorName)
+      curIndicator = HS100Plug(indicatorName, self.config)
       self.indicators[indicatorName] = curIndicator
 
   #
@@ -94,9 +86,10 @@ class JenkinsIndicator(object):
 #
 class HS100Plug(object):
   configSection = 'HS100Plugs'
-  def __init__(self, name):
+  def __init__(self, name, config):
     self.name = name
-    configJson = config.get(HS100Plug.configSection, self.name) 
+    self.config = config
+    configJson = self.config.get(HS100Plug.configSection, self.name) 
     hs100 = json.loads(configJson)
     self.enabled = hs100['Enabled']
     self.ip = hs100['IP']
@@ -119,9 +112,10 @@ class HS100Plug(object):
 #
 class PhotonStatus(object):
   configSection = 'PhotonStatus'
-  def __init__(self, name):
+  def __init__(self, name, config):
     self.name = name
-    configJson = config.get(PhotonStatus.configSection, self.name) 
+    self.config = config
+    configJson = self.config.get(PhotonStatus.configSection, self.name) 
     photon = json.loads(configJson)
     self.enabled = photon['Enabled']
     self.deviceId = photon['DeviceId']
@@ -148,23 +142,25 @@ class PhotonStatus(object):
 # scan jenkins job status and indicate summary results
 #
 class JenkinsScanner(object):
-  jenkinsServer = config.get('Jenkins', 'Server')
-  jenkinsPort = config.get('Jenkins', 'Port')
-  jenkinsView = config.get('Jenkins', 'View')
-  jenkinsUrl='http://%s:%s/view/%s/api/json?pretty=true' % (jenkinsServer, jenkinsPort, jenkinsView)
+  def __init__(self, config):
+    self.config = config
+    self.jenkinsServer = self.config.get('Jenkins', 'Server')
+    self.jenkinsPort = self.config.get('Jenkins', 'Port')
+    self.jenkinsView = self.config.get('Jenkins', 'View')
+    self.jenkinsUrl='http://%s:%s/view/%s/api/json?pretty=true' % (self.jenkinsServer, self.jenkinsPort, self.jenkinsView)
 
-  startBusinessHour = config.getint('Hours', 'Start')
-  endBusinessHour = config.getint('Hours', 'End')
+    self.startBusinessHour = self.config.getint('Hours', 'Start')
+    self.endBusinessHour = self.config.getint('Hours', 'End')
 
-  statusMap = dict(config.items('JobStatus'))
-  buildHolidays = holidays.UnitedStates()
+    self.statusMap = dict(self.config.items('JobStatus'))
+    self.buildHolidays = holidays.UnitedStates()
 
-  indicator = JenkinsIndicator()
-  prev_failed_jobs = set()
+    self.indicator = JenkinsIndicator(self.config)
+    self.prev_failed_jobs = set()
 
-  failing_jobs = set()
-  good_jobs = set()
-  building_jobs = set()
+    self.failing_jobs = set()
+    self.good_jobs = set()
+    self.building_jobs = set()
 
   def isBusinessHours(self):
     now = datetime.datetime.now()
@@ -240,11 +236,20 @@ class JenkinsScanner(object):
       print('outside of business hours')
       self.indicator.indicateStatus('off')
 
+# 
+# read config items from file
+# 
+config = ConfigParser.ConfigParser()
+configFile = "volcanology.ini"
+if len(sys.argv) > 1 and len(sys.argv[1]) > 0:
+  configFile = sys.argv[1]
+config.read(configFile)
+
 #
 # main loop
 #
 waitTime = 30
-scanner = JenkinsScanner()
+scanner = JenkinsScanner(config)
 while True:
   scanner.scanJobs()
   scanner.summarizeJobs()
