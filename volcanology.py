@@ -1,3 +1,4 @@
+import logging
 import json
 import ConfigParser
 import urllib2
@@ -8,6 +9,10 @@ import sys
 import holidays
 from pyHS100 import SmartPlug
 from pprint import pformat as pf
+from logging.config import fileConfig
+
+fileConfig('logging_config.ini')
+logger = logging.getLogger()
 
 #
 # takes summary of jenkins status and communicates to a series of external indicators
@@ -31,7 +36,7 @@ class JenkinsIndicator(object):
   # load photon status objects from config
   def loadPhotonStatus(self):
     for statusName in dict(config.items(PhotonStatus.configSection)):
-      print('loading photon status:%s' % statusName)
+      logger.info('loading photon status:%s' % statusName)
       curStatus = PhotonStatus(statusName, self.config)
       self.statusTrackers[statusName] = curStatus
 
@@ -39,14 +44,14 @@ class JenkinsIndicator(object):
   # load hs100 plug objects from config
   def loadHS100Plugs(self):
     for indicatorName in dict(config.items(HS100Plug.configSection)):
-      print('loading hs100 indicator:%s' % indicatorName)
+      logger.info('loading hs100 indicator:%s' % indicatorName)
       curIndicator = HS100Plug(indicatorName, self.config)
       self.indicators[indicatorName] = curIndicator
 
   #
   # indicate status to plugs and photons
   def indicateStatus(self, status):
-    print('indicating overall status:%s' % status)
+    logger.info('indicating overall status:%s' % status)
     if self.indicatorsEnabled:
       if status == 'failure':
         #
@@ -72,14 +77,14 @@ class JenkinsIndicator(object):
         for curInd in self.indicators:
           self.indicators[curInd].off()
       else:
-        print('unknown status:%s' % status)
+        logger.info('unknown status:%s' % status)
   
       #
       # update all status trackers
       for curTracker in self.statusTrackers:
         self.statusTrackers[curTracker].updateStatus(status)
     else:
-      print('indicators disabled')
+      logger.info('indicators disabled')
 
 #
 # control a TP Link wifi outlet
@@ -94,17 +99,17 @@ class HS100Plug(object):
     self.enabled = hs100['Enabled']
     self.ip = hs100['IP']
     self.plug = SmartPlug(self.ip)
-    print('new plug name:%s ip:%s' % (self.name, self.ip))
-    #print("Full sysinfo: %s" % pf(greenPlug.get_sysinfo()))
+    logger.info('new plug name:%s ip:%s' % (self.name, self.ip))
+    #logger.info("Full sysinfo: %s" % pf(greenPlug.get_sysinfo()))
 
   def indicate(self):
     if self.enabled:
-      print('plug:%s turn on' % self.name)
+      logger.info('plug:%s turn on' % self.name)
       #self.plug.turn_on()
 
   def off(self):
     if self.enabled:
-      print('plug:%s turn off' % self.name)
+      logger.info('plug:%s turn off' % self.name)
       #self.plug.turn_off()
  
 #
@@ -121,11 +126,11 @@ class PhotonStatus(object):
     self.deviceId = photon['DeviceId']
     self.accessToken = photon['AccessToken']
     self.functionName = photon['Function']
-    print('new photon name:%s deviceId:%s accessToken:%s function:%s' % (self.name, self.deviceId,self.accessToken, self.functionName))
+    logger.info('new photon name:%s deviceId:%s accessToken:%s function:%s' % (self.name, self.deviceId,self.accessToken, self.functionName))
 
   def updateStatus(self, status):
     if self.enabled:
-      print('photon %s status:%s' % (self.name, status))
+      logger.info('photon %s status:%s' % (self.name, status))
       #self.sendCall(status)
 
   def sendCall(self, argValue):
@@ -135,7 +140,7 @@ class PhotonStatus(object):
       'arg': argValue
     }
     r = requests.post(target_url, data=data)
-    print('photon %s response:%s' % (self.name, r.text))
+    logger.info('photon %s response:%s' % (self.name, r.text))
 
 
 #
@@ -166,18 +171,18 @@ class JenkinsScanner(object):
     now = datetime.datetime.now()
 
     if now in self.buildHolidays:
-      print('build holiday')
+      logger.info('build holiday')
       return False
 
     dayNum = datetime.datetime.today().weekday()
     if dayNum >= 5:
-      print('build weekend')
+      logger.info('build weekend')
       return False
 
     if now.hour >= self.startBusinessHour and now.hour <= self.endBusinessHour:
       return True
     else:
-      print('build outside of hours')
+      logger.info('build outside of hours')
       return False
 
   def analyzeJob(self, job):
@@ -194,12 +199,12 @@ class JenkinsScanner(object):
     else:
       self.other_jobs.add(name)
 
-    #print('job:%s color:%s status:%s' % (name, jobColor, jobStatus))
+    #logger.info('job:%s color:%s status:%s' % (name, jobColor, jobStatus))
 
   #
   # scan all jobs and determine status
   def scanJobs(self):
-    print(' about to query url: %s' % self.jenkinsUrl)
+    logger.info(' about to query url: %s' % self.jenkinsUrl)
     jenkins_status = json.load(urllib2.urlopen(self.jenkinsUrl))
     jobs = jenkins_status['jobs']
 
@@ -227,13 +232,13 @@ class JenkinsScanner(object):
     if self.isBusinessHours():
       # if any job has failed and not yet succeeded again
       if len(self.prev_failed_jobs) > 0:
-        print('some jobs failed:%s' % self.prev_failed_jobs)
+        logger.info('some jobs failed:%s' % self.prev_failed_jobs)
         self.indicator.indicateStatus('failure')
       else:
-        print('nothing failed building jobs:%s' % self.building_jobs)
+        logger.info('nothing failed building jobs:%s' % self.building_jobs)
         self.indicator.indicateStatus('success')
     else:
-      print('outside of business hours')
+      logger.info('outside of business hours')
       self.indicator.indicateStatus('off')
 
 # 
