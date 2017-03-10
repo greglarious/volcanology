@@ -231,13 +231,13 @@ class JenkinsScanner(object):
     if self.isBusinessHours():
       # if any job has failed and not yet succeeded again
       if len(self.prev_failed_jobs) > 0:
-        print('failed jobs:%s' % self.prev_failed_jobs)
-        print('building jobs:%s' % self.building_jobs)
+        print('some jobs failed:%s' % self.prev_failed_jobs)
         self.indicator.indicateStatus('failure')
       else:
-        print('building jobs:%s' % self.building_jobs)
+        print('nothing failed building jobs:%s' % self.building_jobs)
         self.indicator.indicateStatus('success')
     else:
+      print('outside of business hours')
       self.indicator.indicateStatus('off')
 
 #
