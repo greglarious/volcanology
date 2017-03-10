@@ -99,18 +99,18 @@ class HS100Plug(object):
     self.enabled = hs100['Enabled']
     self.ip = hs100['IP']
     self.plug = SmartPlug(self.ip)
-    logger.info('new plug name:%s ip:%s' % (self.name, self.ip))
+    logger.debug('new plug name:%s ip:%s' % (self.name, self.ip))
     #logger.info("Full sysinfo: %s" % pf(greenPlug.get_sysinfo()))
 
   def indicate(self):
     if self.enabled:
-      logger.info('plug:%s turn on' % self.name)
-      #self.plug.turn_on()
+      logger.debug('plug:%s turn on' % self.name)
+      self.plug.turn_on()
 
   def off(self):
     if self.enabled:
-      logger.info('plug:%s turn off' % self.name)
-      #self.plug.turn_off()
+      logger.debug('plug:%s turn off' % self.name)
+      self.plug.turn_off()
  
 #
 # control bubble machine via particle.io photon
@@ -126,21 +126,21 @@ class PhotonStatus(object):
     self.deviceId = photon['DeviceId']
     self.accessToken = photon['AccessToken']
     self.functionName = photon['Function']
-    logger.info('new photon name:%s deviceId:%s accessToken:%s function:%s' % (self.name, self.deviceId,self.accessToken, self.functionName))
+    logger.debug('new photon name:%s deviceId:%s accessToken:%s function:%s' % (self.name, self.deviceId,self.accessToken, self.functionName))
 
   def updateStatus(self, status):
     if self.enabled:
-      logger.info('photon %s status:%s' % (self.name, status))
-      #self.sendCall(status)
+      logger.debug('photon %s status:%s' % (self.name, status))
+      self.sendCall(status)
 
   def sendCall(self, argValue):
-    target_url ="https://api.particle.io/v1/devices/%s/%s?access_token=%s" % (deviceId, functionName, accessToken)
+    target_url ="https://api.particle.io/v1/devices/%s/%s?access_token=%s" % (self.deviceId, self.functionName, self.accessToken)
 
     data = {
       'arg': argValue
     }
     r = requests.post(target_url, data=data)
-    logger.info('photon %s response:%s' % (self.name, r.text))
+    logger.debug('photon %s response:%s' % (self.name, r.text))
 
 
 #
@@ -204,7 +204,7 @@ class JenkinsScanner(object):
   #
   # scan all jobs and determine status
   def scanJobs(self):
-    logger.info(' about to query url: %s' % self.jenkinsUrl)
+    logger.debug(' about to query url: %s' % self.jenkinsUrl)
     jenkins_status = json.load(urllib2.urlopen(self.jenkinsUrl))
     jobs = jenkins_status['jobs']
 
@@ -235,7 +235,7 @@ class JenkinsScanner(object):
         logger.info('some jobs failed:%s' % self.prev_failed_jobs)
         self.indicator.indicateStatus('failure')
       else:
-        logger.info('nothing failed building jobs:%s' % self.building_jobs)
+        logger.debug('nothing failed building jobs:%s' % self.building_jobs)
         self.indicator.indicateStatus('success')
     else:
       logger.info('outside of business hours')
