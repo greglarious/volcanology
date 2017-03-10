@@ -18,22 +18,104 @@ if len(sys.argv) > 1 and len(sys.argv[1]) > 0:
   config_file = sys.argv[1]
 Config.read(config_file)
 
-buildHolidays = holidays.UnitedStates()
 
+class JenkinsIndicator(object):
+
+  def __init__(self):
+    self.statusTrackers = dict()
+    self.indicators = dict()
+    self.indicatorsEnabled = Config.getboolean("Indicators", "Enabled")
+
+    self.failureIndicators = json.loads(Config.get("Indicators","Failure"))
+    self.successIndicators = json.loads(Config.get("Indicators","Success"))
+    self.statusIndicators = json.loads(Config.get("Indicators","Status"))
+
+    self.loadPhotonStatus()
+    self.loadHS100Plugs()
+
+  def loadPhotonStatus(self):
+    for statusName in dict(Config.items('PhotonStatus')):
+      print('loading photon status:%s' % statusName)
+      curStatus = PhotonStatus(statusName)
+      self.statusTrackers[statusName] = curStatus
+
+  def loadHS100Plugs(self):
+    for indicatorName in dict(Config.items('HS100Plugs')):
+      print('loading hs100 indicator:%s' % indicatorName)
+      curIndicator = HS100Plug(indicatorName)
+      self.indicators[indicatorName] = curIndicator
+
+  def indicateStatus(self, status):
+    print('indicating overall status:%s' % status)
+    if self.indicatorsEnabled:
+      if status == 'failure':
+        #
+        # turn on all the things that indicate failure
+        for curInd in self.failureIndicators:
+          self.indicators[curInd].indicate()
+        #
+        # turn off all the things that indicate success
+        for curInd in self.successIndicators:
+          self.indicators[curInd].off()
+      elif status == 'success':
+        #
+        # turn on all the things that indicate success
+        for curInd in self.successIndicators:
+          self.indicators[curInd].indicate()
+        #
+        # turn off all the things that indicate failure
+        for curInd in self.failureIndicators:
+          self.indicators[curInd].off()
+      elif status == 'off':
+        #
+        # turn off all the things 
+        for curInd in self.indicators:
+          self.indicators[curInd].off()
+      else:
+        print('unknown status:%s' % status)
+  
+      #
+      # update all status trackers
+      for curTracker in self.statusTrackers:
+        self.statusTrackers[curTracker].updateStatus(status)
+    else:
+      print('indicators disabled')
+
+#
+# control a TP Link wifi outlet
+#
+class HS100Plug(object):
+  def __init__(self, name):
+    self.name = name
+    self.ip = Config.get('HS100Plugs', self.name) 
+    self.plug = SmartPlug(self.ip)
+    print('new plug name:%s ip:%s' % (self.name, self.ip))
+    #print("Full sysinfo: %s" % pf(greenPlug.get_sysinfo()))
+
+  def indicate(self):
+    print('plug:%s turn on' % self.name)
+    #self.plug.turn_on()
+
+  def off(self):
+    print('plug:%s turn off' % self.name)
+    #self.plug.turn_off()
+ 
 #
 # control bubble machine via particle.io photon
 #
-class BubbleMachine(object):
-  DEVICE_ID = Config.get('Bubbles', 'DeviceId') 
-  ACCESS_TOKEN = Config.get('Bubbles', 'AccessToken') 
-  FUNC_NAME ="bubbles"
-  def trackSuccess(self):
-    print('success bubble')
-    self.sendCall("success")
+class PhotonStatus(object):
+  def __init__(self, name):
+    self.name = name
+    configJson = Config.get('PhotonStatus', self.name) 
+    photon = json.loads(configJson)
+    self.DEVICE_ID = photon['DeviceId']
+    self.ACCESS_TOKEN = photon['AccessToken']
+    self.FUNC_NAME = photon['Function']
+    print('new photon name:%s deviceId:%s accessToken:%s function:%s' % (self.name, self.DEVICE_ID,self.ACCESS_TOKEN, self.FUNC_NAME))
 
-  def trackFailure(self):
-    print('failure bubble')
-    self.sendCall("failure")
+  def updateStatus(self, status):
+    print('photon %s status:%s' % (self.name, status))
+    #self.sendCall(status)
 
   def sendCall(self, argValue):
     target_url ="https://api.particle.io/v1/devices/%s/%s?access_token=%s" % (DEVICE_ID, FUNC_NAME, ACCESS_TOKEN)
@@ -42,55 +124,8 @@ class BubbleMachine(object):
       'arg': argValue
     }
     r = requests.post(target_url, data=data)
-    print('bubble response:%s' % r.text)
+    print('photon %s response:%s' % (self.name, r.text))
 
-#
-# indicate status via lava lamps and bubbles
-#
-class JenkinsIndicator(object):
-  enabled = False
-
-  GREEN_IP = Config.get('Plugs', 'GreenIP1')
-  RED_IP = Config.get('Plugs', 'RedIP1')
-  RED2_IP = Config.get('Plugs', 'RedIP2')
-
-  green = SmartPlug(GREEN_IP)
-  red = SmartPlug(RED_IP)
-  red2 = SmartPlug(RED2_IP)
-  bubble = BubbleMachine()
-
-  #print("Full sysinfo: %s" % pf(greenPlug.get_sysinfo()))
-
-  def allOff(self):
-    if self.enabled:
-      self.green.turn_off()
-      self.red.turn_off()
-      self.red2.turn_off()
-      print('all off')
-
-  def indicateGreen(self):
-    if self.enabled:
-      self.green.turn_on()
-      self.red.turn_off()
-      self.red2.turn_off()
-      self.bubble.trackSuccess()
-
-  def indicateRed(self):
-    if self.enabled:
-      self.red.turn_on()
-      self.red2.turn_on()
-      self.green.turn_off()
-      self.bubble.trackFailure()
-
-  # status: off success failure
-  def setStatus(self, status):
-    print('lamp status is: %s' % status)
-    if status == "off":
-     self.allOff()
-    elif status == "success":
-     self.indicateGreen()
-    elif status == "failure":
-     self.indicateRed()
 
 #
 # scan jenkins job status and indicate summary results
@@ -104,6 +139,8 @@ class JenkinsScanner(object):
   MIN_BUS_HOUR = Config.getint('Hours', 'Start')
   MAX_BUS_HOUR = Config.getint('Hours', 'End')
 
+  buildHolidays = holidays.UnitedStates()
+
   indicator = JenkinsIndicator()
   prev_failed_jobs = set()
 
@@ -114,7 +151,7 @@ class JenkinsScanner(object):
   def isBusinessHours(self):
     now = datetime.datetime.now()
 
-    if now in buildHolidays:
+    if now in self.buildHolidays:
       print('build holiday')
       return False
 
@@ -176,12 +213,12 @@ class JenkinsScanner(object):
       if len(self.prev_failed_jobs) > 0:
         print('failed jobs:%s' % self.prev_failed_jobs)
         print('building jobs:%s' % self.building_jobs)
-        self.indicator.setStatus('failure')
+        self.indicator.indicateStatus('failure')
       else:
         print('building jobs:%s' % self.building_jobs)
-        self.indicator.setStatus('success')
+        self.indicator.indicateStatus('success')
     else:
-      self.indicator.setStatus('off')
+      self.indicator.indicateStatus('off')
 
 #
 # main loop
