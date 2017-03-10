@@ -156,6 +156,7 @@ class JenkinsScanner(object):
   MIN_BUS_HOUR = Config.getint('Hours', 'Start')
   MAX_BUS_HOUR = Config.getint('Hours', 'End')
 
+  statusMap = dict(Config.items('JobStatus'))
   buildHolidays = holidays.UnitedStates()
 
   indicator = JenkinsIndicator()
@@ -184,23 +185,20 @@ class JenkinsScanner(object):
       return False
 
   def analyzeJob(self, job):
-    status = job['color']
+    jobColor = job['color']
     name = job['name']
-    if status == 'red':
+    jobStatus = self.statusMap[jobColor]
+
+    if jobStatus == 'failing':
       self.failing_jobs.add(name)
-    elif status == 'blue':
+    elif jobStatus == 'success':
       self.good_jobs.add(name)
-    elif status == 'notbuilt':
-      print('ignore notbuilt job:%s' % name)
-    elif status == 'disabled':
-      print('ignore disabled job:%s' % name)
-    elif status == 'blue_anime':
-      self.building_jobs.add(name)
-    elif status == 'red_anime':
-      # building but was previously broken
+    elif jobStatus == 'building':
       self.building_jobs.add(name)
     else:
-      print('saw unknown status:%s job:%s' % (status, name))
+      self.other_jobs.add(name)
+
+    #print('job:%s color:%s status:%s' % (name, jobColor, jobStatus))
 
   #
   # scan all jobs and determine status
@@ -215,6 +213,7 @@ class JenkinsScanner(object):
     self.failing_jobs = set()
     self.good_jobs = set()
     self.building_jobs = set()
+    self.other_jobs = set()
 
     # sort current job status into lists
     for job in jobs:
