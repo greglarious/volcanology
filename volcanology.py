@@ -18,7 +18,9 @@ if len(sys.argv) > 1 and len(sys.argv[1]) > 0:
   config_file = sys.argv[1]
 Config.read(config_file)
 
-
+#
+# takes summary of jenkins status and communicates to a series of external indicators
+#
 class JenkinsIndicator(object):
 
   def __init__(self):
@@ -33,18 +35,24 @@ class JenkinsIndicator(object):
     self.loadPhotonStatus()
     self.loadHS100Plugs()
 
+  # 
+  # load photon status objects from config
   def loadPhotonStatus(self):
     for statusName in dict(Config.items('PhotonStatus')):
       print('loading photon status:%s' % statusName)
       curStatus = PhotonStatus(statusName)
       self.statusTrackers[statusName] = curStatus
 
+  # 
+  # load hs100 plug objects from config
   def loadHS100Plugs(self):
     for indicatorName in dict(Config.items('HS100Plugs')):
       print('loading hs100 indicator:%s' % indicatorName)
       curIndicator = HS100Plug(indicatorName)
       self.indicators[indicatorName] = curIndicator
 
+  #
+  # indicate status to plugs and photons
   def indicateStatus(self, status):
     print('indicating overall status:%s' % status)
     if self.indicatorsEnabled:
@@ -185,6 +193,8 @@ class JenkinsScanner(object):
     else:
       print('saw unknown status:%s job:%s' % (status, name))
 
+  #
+  # scan all jobs and determine status
   def scanJobs(self):
     print(' about to query url: %s' % self.JENKINS_STATUS_URL)
     jenkins_status = json.load(urllib2.urlopen(self.JENKINS_STATUS_URL))
@@ -207,6 +217,8 @@ class JenkinsScanner(object):
     # only remove from failed list if success
     self.prev_failed_jobs.difference_update(self.good_jobs)
 
+  #
+  # summarize all jobs into a single status value
   def summarizeJobs(self):
     if self.isBusinessHours():
       # if any job has failed and not yet succeeded again

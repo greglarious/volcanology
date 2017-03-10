@@ -10,7 +10,6 @@ Scans a Jenkins view for list of builds and status.
 - includes photon script to activate a bubble machine if builds are fixed quickly after failing
 
 ## To Do
-- [ ] load and instantiate lists of build indicators from config file
 - [ ] add more types of wifi smart switches
 - [ ] add ITTT integration
 - [ ] create Fritzing schematic for bubble machine integration circuit
