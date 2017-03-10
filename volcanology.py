@@ -12,11 +12,11 @@ from pprint import pformat as pf
 # 
 # read config items from file
 # 
-Config = ConfigParser.ConfigParser()
-config_file = "volcanology.ini"
+config = ConfigParser.ConfigParser()
+configFile = "volcanology.ini"
 if len(sys.argv) > 1 and len(sys.argv[1]) > 0:
-  config_file = sys.argv[1]
-Config.read(config_file)
+  configFile = sys.argv[1]
+config.read(configFile)
 
 #
 # takes summary of jenkins status and communicates to a series of external indicators
@@ -26,11 +26,11 @@ class JenkinsIndicator(object):
   def __init__(self):
     self.statusTrackers = dict()
     self.indicators = dict()
-    self.indicatorsEnabled = Config.getboolean("Indicators", "Enabled")
+    self.indicatorsEnabled = config.getboolean("Indicators", "Enabled")
 
-    self.failureIndicators = json.loads(Config.get("Indicators","Failure"))
-    self.successIndicators = json.loads(Config.get("Indicators","Success"))
-    self.statusIndicators = json.loads(Config.get("Indicators","Status"))
+    self.failureIndicators = json.loads(config.get("Indicators","Failure"))
+    self.successIndicators = json.loads(config.get("Indicators","Success"))
+    self.statusIndicators = json.loads(config.get("Indicators","Status"))
 
     self.loadPhotonStatus()
     self.loadHS100Plugs()
@@ -38,7 +38,7 @@ class JenkinsIndicator(object):
   # 
   # load photon status objects from config
   def loadPhotonStatus(self):
-    for statusName in dict(Config.items(PhotonStatus.PhotonConfigSection)):
+    for statusName in dict(config.items(PhotonStatus.configSection)):
       print('loading photon status:%s' % statusName)
       curStatus = PhotonStatus(statusName)
       self.statusTrackers[statusName] = curStatus
@@ -46,7 +46,7 @@ class JenkinsIndicator(object):
   # 
   # load hs100 plug objects from config
   def loadHS100Plugs(self):
-    for indicatorName in dict(Config.items(HS100Plug.HS100ConfigSection)):
+    for indicatorName in dict(config.items(HS100Plug.configSection)):
       print('loading hs100 indicator:%s' % indicatorName)
       curIndicator = HS100Plug(indicatorName)
       self.indicators[indicatorName] = curIndicator
@@ -93,10 +93,10 @@ class JenkinsIndicator(object):
 # control a TP Link wifi outlet
 #
 class HS100Plug(object):
-  HS100ConfigSection = 'HS100Plugs'
+  configSection = 'HS100Plugs'
   def __init__(self, name):
     self.name = name
-    configJson = Config.get(HS100Plug.HS100ConfigSection, self.name) 
+    configJson = config.get(HS100Plug.configSection, self.name) 
     hs100 = json.loads(configJson)
     self.enabled = hs100['Enabled']
     self.ip = hs100['IP']
@@ -118,16 +118,16 @@ class HS100Plug(object):
 # control bubble machine via particle.io photon
 #
 class PhotonStatus(object):
-  PhotonConfigSection = 'PhotonStatus'
+  configSection = 'PhotonStatus'
   def __init__(self, name):
     self.name = name
-    configJson = Config.get(PhotonStatus.PhotonConfigSection, self.name) 
+    configJson = config.get(PhotonStatus.configSection, self.name) 
     photon = json.loads(configJson)
     self.enabled = photon['Enabled']
-    self.DEVICE_ID = photon['DeviceId']
-    self.ACCESS_TOKEN = photon['AccessToken']
-    self.FUNC_NAME = photon['Function']
-    print('new photon name:%s deviceId:%s accessToken:%s function:%s' % (self.name, self.DEVICE_ID,self.ACCESS_TOKEN, self.FUNC_NAME))
+    self.deviceId = photon['DeviceId']
+    self.accessToken = photon['AccessToken']
+    self.functionName = photon['Function']
+    print('new photon name:%s deviceId:%s accessToken:%s function:%s' % (self.name, self.deviceId,self.accessToken, self.functionName))
 
   def updateStatus(self, status):
     if self.enabled:
@@ -135,7 +135,7 @@ class PhotonStatus(object):
       #self.sendCall(status)
 
   def sendCall(self, argValue):
-    target_url ="https://api.particle.io/v1/devices/%s/%s?access_token=%s" % (DEVICE_ID, FUNC_NAME, ACCESS_TOKEN)
+    target_url ="https://api.particle.io/v1/devices/%s/%s?access_token=%s" % (deviceId, functionName, accessToken)
 
     data = {
       'arg': argValue
@@ -148,15 +148,15 @@ class PhotonStatus(object):
 # scan jenkins job status and indicate summary results
 #
 class JenkinsScanner(object):
-  JENKINS_SERVER = Config.get('Jenkins', 'Server')
-  JENKINS_PORT = Config.get('Jenkins', 'Port')
-  JENKINS_VIEW_NAME = Config.get('Jenkins', 'View')
-  JENKINS_STATUS_URL='http://%s:%s/view/%s/api/json?pretty=true' % (JENKINS_SERVER, JENKINS_PORT, JENKINS_VIEW_NAME)
+  jenkinsServer = config.get('Jenkins', 'Server')
+  jenkinsPort = config.get('Jenkins', 'Port')
+  jenkinsView = config.get('Jenkins', 'View')
+  jenkinsUrl='http://%s:%s/view/%s/api/json?pretty=true' % (jenkinsServer, jenkinsPort, jenkinsView)
 
-  MIN_BUS_HOUR = Config.getint('Hours', 'Start')
-  MAX_BUS_HOUR = Config.getint('Hours', 'End')
+  startBusinessHour = config.getint('Hours', 'Start')
+  endBusinessHour = config.getint('Hours', 'End')
 
-  statusMap = dict(Config.items('JobStatus'))
+  statusMap = dict(config.items('JobStatus'))
   buildHolidays = holidays.UnitedStates()
 
   indicator = JenkinsIndicator()
@@ -178,7 +178,7 @@ class JenkinsScanner(object):
       print('build weekend')
       return False
 
-    if now.hour >= self.MIN_BUS_HOUR and now.hour <= self.MAX_BUS_HOUR:
+    if now.hour >= self.startBusinessHour and now.hour <= self.endBusinessHour:
       return True
     else:
       print('build outside of hours')
@@ -203,8 +203,8 @@ class JenkinsScanner(object):
   #
   # scan all jobs and determine status
   def scanJobs(self):
-    print(' about to query url: %s' % self.JENKINS_STATUS_URL)
-    jenkins_status = json.load(urllib2.urlopen(self.JENKINS_STATUS_URL))
+    print(' about to query url: %s' % self.jenkinsUrl)
+    jenkins_status = json.load(urllib2.urlopen(self.jenkinsUrl))
     jobs = jenkins_status['jobs']
 
     # append bad jobs to prev_failed_jobs bad jobs
@@ -243,9 +243,9 @@ class JenkinsScanner(object):
 #
 # main loop
 #
-WAIT_TIME = 30
+waitTime = 30
 scanner = JenkinsScanner()
 while True:
   scanner.scanJobs()
   scanner.summarizeJobs()
-  time.sleep(WAIT_TIME)
+  time.sleep(waitTime)
