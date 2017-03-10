@@ -38,7 +38,7 @@ class JenkinsIndicator(object):
   # 
   # load photon status objects from config
   def loadPhotonStatus(self):
-    for statusName in dict(Config.items('PhotonStatus')):
+    for statusName in dict(Config.items(PhotonStatus.PhotonConfigSection)):
       print('loading photon status:%s' % statusName)
       curStatus = PhotonStatus(statusName)
       self.statusTrackers[statusName] = curStatus
@@ -46,7 +46,7 @@ class JenkinsIndicator(object):
   # 
   # load hs100 plug objects from config
   def loadHS100Plugs(self):
-    for indicatorName in dict(Config.items('HS100Plugs')):
+    for indicatorName in dict(Config.items(HS100Plug.HS100ConfigSection)):
       print('loading hs100 indicator:%s' % indicatorName)
       curIndicator = HS100Plug(indicatorName)
       self.indicators[indicatorName] = curIndicator
@@ -93,37 +93,46 @@ class JenkinsIndicator(object):
 # control a TP Link wifi outlet
 #
 class HS100Plug(object):
+  HS100ConfigSection = 'HS100Plugs'
   def __init__(self, name):
     self.name = name
-    self.ip = Config.get('HS100Plugs', self.name) 
+    configJson = Config.get(HS100Plug.HS100ConfigSection, self.name) 
+    hs100 = json.loads(configJson)
+    self.enabled = hs100['Enabled']
+    self.ip = hs100['IP']
     self.plug = SmartPlug(self.ip)
     print('new plug name:%s ip:%s' % (self.name, self.ip))
     #print("Full sysinfo: %s" % pf(greenPlug.get_sysinfo()))
 
   def indicate(self):
-    print('plug:%s turn on' % self.name)
-    #self.plug.turn_on()
+    if self.enabled:
+      print('plug:%s turn on' % self.name)
+      #self.plug.turn_on()
 
   def off(self):
-    print('plug:%s turn off' % self.name)
-    #self.plug.turn_off()
+    if self.enabled:
+      print('plug:%s turn off' % self.name)
+      #self.plug.turn_off()
  
 #
 # control bubble machine via particle.io photon
 #
 class PhotonStatus(object):
+  PhotonConfigSection = 'PhotonStatus'
   def __init__(self, name):
     self.name = name
-    configJson = Config.get('PhotonStatus', self.name) 
+    configJson = Config.get(PhotonStatus.PhotonConfigSection, self.name) 
     photon = json.loads(configJson)
+    self.enabled = photon['Enabled']
     self.DEVICE_ID = photon['DeviceId']
     self.ACCESS_TOKEN = photon['AccessToken']
     self.FUNC_NAME = photon['Function']
     print('new photon name:%s deviceId:%s accessToken:%s function:%s' % (self.name, self.DEVICE_ID,self.ACCESS_TOKEN, self.FUNC_NAME))
 
   def updateStatus(self, status):
-    print('photon %s status:%s' % (self.name, status))
-    #self.sendCall(status)
+    if self.enabled:
+      print('photon %s status:%s' % (self.name, status))
+      #self.sendCall(status)
 
   def sendCall(self, argValue):
     target_url ="https://api.particle.io/v1/devices/%s/%s?access_token=%s" % (DEVICE_ID, FUNC_NAME, ACCESS_TOKEN)
