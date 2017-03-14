@@ -189,6 +189,49 @@ class CategorizedJenkinsJobs(object):
       self.otherJobs.add(name)
 
     #logger.info('job:%s color:%s status:%s' % (name, jobColor, jobStatus))
+class ScannerStatus(object):
+  def __init__(self):
+    self.failed = set()
+    self.building = set()
+    self.successCount = set()
+
+  def trackBuilding(self, categorizer):
+    self.building = categorizer.buildingJobs
+
+  def trackFailed(self, categorizer):
+    # add failing jobs to prev failed list
+    self.failed.update(categorizer.failingJobs)
+
+    # remove succeeding jobs from failed list
+    self.failed.difference_update(categorizer.successJobs)
+
+  #
+  # if a job was previously building, is not currently building, and is success
+  # then increment success count
+  def trackConsecutiveSuccess(self, categorizer):
+    # if any job is failing, reset all counts
+    if len(self.failed) > 0:
+      self.successCount = set()
+    else:
+      for curJob in self.building:
+        # if a job was building 
+        if not curJob in categorizer.buildingJobs.keys():
+          # and has now succeeded, increment the count
+          if curJob in categorizer.successJobs.keys():
+            self.successCount[curJob] = self.successCount[curJob] + 1
+          else:
+            self.successCount[curJob] = 0
+  #
+  # check for any job with a success streak
+  #
+  def detectSuccessStreak(self):
+    minSuccessStreak = 2
+    for curJob in self.successCount:
+      if self.successCount[curJob] > minSuccessStreak:
+        self.successCount[curJob] = 0
+        return True
+    return False
+
 #
 # scan jenkins job status and indicate summary results
 #
@@ -202,11 +245,8 @@ class JenkinsScanner(object):
     self.buildHolidays = holidays.UnitedStates()
 
     self.indicator = JenkinsIndicator(self.config)
-    self.prevFailed = set()
-    self.prevBuilding = set()
-    self.successCount = set()
     self.categorizer = CategorizedJenkinsJobs(self.config)
-
+    self.scanStatus = ScannerStatus()
 
   def isBusinessHours(self):
     now = datetime.datetime.now()
@@ -230,7 +270,7 @@ class JenkinsScanner(object):
   # scan all jobs and determine status
   def scanJobs(self):
     # remember previous building jobs
-    self.prevBuilding = self.categorizer.buildingJobs
+    self.scanStatus.trackBuilding(self.categorizer)
 
     # clear out category lists 
     self.categorizer.reset()
@@ -240,55 +280,23 @@ class JenkinsScanner(object):
     for job in jobs:
       self.categorizer.categorizeJob(job)
 
-    # add failing jobs to prev failed list
-    self.prevFailed.update(self.categorizer.failingJobs)
-
-    # remove succeeding jobs from failed list
-    self.prevFailed.difference_update(self.categorizer.successJobs)
+    # track failing jobs
+    self.scanStatus.trackFailed(self.categorizer)
 
     # count the consecutive successes to detect streaks
-    self.trackConsecutiveSuccess()
-
-  #
-  # if a job was previously building, is not currently building, and is success
-  # then increment success count
-  def trackConsecutiveSuccess(self):
-    # if any job is failing, reset all counts
-    if len(self.prevFailed) > 0:
-      self.successCount = set()
-    else:
-      for curJob in self.prevBuilding:
-        # if a job was building 
-        if not curJob in self.categorizer.buildingJobs.keys():
-          # and has now succeeded, increment the count
-          if curJob in self.categorizer.successJobs.keys():
-            successCount[curJob] = successCount[curJob] + 1
-          else:
-            successCount[curJob] = 0
+    self.scanStatus.trackConsecutiveSuccess(self.categorizer)
   
-  #
-  # check for any job with a success streak
-  #
-  def detectSuccessStreak(self):
-    minSuccessStreak = 2
-    for curJob in successCount:
-      if successCount[curJob] > minSuccessStreak:
-        successCount[curJob] = 0
-        return True
-    return False
-
   #
   # summarize all jobs into a single status value
   def summarizeJobs(self):
-
     if self.isBusinessHours():
       # if any job is failing (or has recently failed and is still building)
-      if len(self.prevFailed) > 0:
-        logger.info('some jobs failed:%s' % self.prevFailed)
+      if len(self.scanStatus.failed) > 0:
+        logger.info('some jobs failed:%s' % self.scanStatus.failed)
         newStatus = 'failure'
       else:
         logger.debug('nothing failed. building jobs:%s' % self.categorizer.buildingJobs)
-        if detectSuccessStreak():
+        if self.scanStatus.detectSuccessStreak():
           newStatus = 'successStreak'
         else:
           newStatus = 'success'
@@ -298,10 +306,10 @@ class JenkinsScanner(object):
 
     return newStatus
 
-
   def indicateStatus(self, newStatus):
     # send the new status to all of the devices
     self.indicator.indicateStatus(newStatus)
+
 # 
 # read config items from file
 # 
