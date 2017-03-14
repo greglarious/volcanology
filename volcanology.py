@@ -218,7 +218,11 @@ class ScannerStatus(object):
         if not curJob in categorizer.buildingJobs:
           # and has now succeeded, increment the count
           if curJob in categorizer.successJobs:
-            self.successCount[curJob] = self.successCount[curJob] + 1
+            if curJob in self.successCount:
+              self.successCount[curJob] = self.successCount[curJob] + 1
+            else:
+              self.successCount[curJob] = 1
+            logger.debug('incremented success count for job:%s count:%d' % (curJob, self.successCount[curJob]))
           else:
             self.successCount[curJob] = 0
   #
