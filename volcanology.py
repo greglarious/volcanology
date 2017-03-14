@@ -62,7 +62,7 @@ class JenkinsIndicator(object):
         # turn off all the things that indicate success
         for curInd in self.successIndicators:
           self.indicators[curInd].off()
-      elif status == 'success':
+      elif status == 'success' or status == 'successStreak':
         #
         # turn on all the things that indicate success
         for curInd in self.successIndicators:
@@ -95,9 +95,9 @@ class HS100Plug(object):
     self.name = name
     self.config = config
     configJson = self.config.get(HS100Plug.configSection, self.name) 
-    hs100 = json.loads(configJson)
-    self.enabled = hs100['Enabled']
-    self.ip = hs100['IP']
+    hs100config = json.loads(configJson)
+    self.enabled = hs100config['Enabled']
+    self.ip = hs100config['IP']
     self.plug = SmartPlug(self.ip)
     logger.debug('new plug name:%s ip:%s' % (self.name, self.ip))
     #logger.info("Full sysinfo: %s" % pf(greenPlug.get_sysinfo()))
@@ -108,7 +108,7 @@ class HS100Plug(object):
       try:
         self.plug.turn_on()
       except: # catch *all* exceptions
-        logger.exception("exception in indicate" )
+        logger.exception("exception in indicate")
 
   def off(self):
     if self.enabled:
@@ -137,9 +137,9 @@ class PhotonStatus(object):
   def updateStatus(self, status):
     if self.enabled:
       logger.debug('photon %s status:%s' % (self.name, status))
-      self.sendCall(status)
+      self.callFunction(status)
 
-  def sendCall(self, argValue):
+  def callFunction(self, argValue):
     target_url ="https://api.particle.io/v1/devices/%s/%s?access_token=%s" % (self.deviceId, self.functionName, self.accessToken)
 
     data = {
@@ -148,11 +148,7 @@ class PhotonStatus(object):
     r = requests.post(target_url, data=data)
     logger.debug('photon %s response:%s' % (self.name, r.text))
 
-
-#
-# scan jenkins job status and indicate summary results
-#
-class JenkinsScanner(object):
+class JenkinsServer(object):
   def __init__(self, config):
     self.config = config
     self.jenkinsServer = self.config.get('Jenkins', 'Server')
@@ -160,18 +156,57 @@ class JenkinsScanner(object):
     self.jenkinsView = self.config.get('Jenkins', 'View')
     self.jenkinsUrl='http://%s:%s/view/%s/api/json?pretty=true' % (self.jenkinsServer, self.jenkinsPort, self.jenkinsView)
 
+  def getJobs(self):
+    logger.debug(' about to query url: %s' % self.jenkinsUrl)
+    jenkinsStatus = json.load(urllib2.urlopen(self.jenkinsUrl))
+    jobs = jenkinsStatus['jobs']
+    return jobs
+
+class CategorizedJenkinsJobs(object):
+  def __init__(self, config):
+    self.config = config
+    self.statusMap = dict(self.config.items('JobStatus'))
+    self.reset()
+
+  def reset(self):
+    self.failingJobs = set()
+    self.successJobs = set()
+    self.buildingJobs = set()
+    self.otherJobs = set()
+
+  def categorizeJob(self, job):
+    jobColor = job['color']
+    name = job['name']
+    jobStatus = self.statusMap[jobColor]
+
+    if jobStatus == 'failing':
+      self.failingJobs.add(name)
+    elif jobStatus == 'success':
+      self.successJobs.add(name)
+    elif jobStatus == 'building':
+      self.buildingJobs.add(name)
+    else:
+      self.otherJobs.add(name)
+
+    #logger.info('job:%s color:%s status:%s' % (name, jobColor, jobStatus))
+#
+# scan jenkins job status and indicate summary results
+#
+class JenkinsScanner(object):
+  def __init__(self, config):
+    self.config = config
+    self.jenkinsServer = JenkinsServer(self.config)
+
     self.startBusinessHour = self.config.getint('Hours', 'Start')
     self.endBusinessHour = self.config.getint('Hours', 'End')
-
-    self.statusMap = dict(self.config.items('JobStatus'))
     self.buildHolidays = holidays.UnitedStates()
 
     self.indicator = JenkinsIndicator(self.config)
-    self.prev_failed_jobs = set()
+    self.prevFailed = set()
+    self.prevBuilding = set()
+    self.successCount = set()
+    self.categorizer = CategorizedJenkinsJobs(self.config)
 
-    self.failing_jobs = set()
-    self.good_jobs = set()
-    self.building_jobs = set()
 
   def isBusinessHours(self):
     now = datetime.datetime.now()
@@ -191,62 +226,82 @@ class JenkinsScanner(object):
       logger.info('build outside of hours')
       return False
 
-  def analyzeJob(self, job):
-    jobColor = job['color']
-    name = job['name']
-    jobStatus = self.statusMap[jobColor]
-
-    if jobStatus == 'failing':
-      self.failing_jobs.add(name)
-    elif jobStatus == 'success':
-      self.good_jobs.add(name)
-    elif jobStatus == 'building':
-      self.building_jobs.add(name)
-    else:
-      self.other_jobs.add(name)
-
-    #logger.info('job:%s color:%s status:%s' % (name, jobColor, jobStatus))
-
   #
   # scan all jobs and determine status
   def scanJobs(self):
-    logger.debug(' about to query url: %s' % self.jenkinsUrl)
-    jenkins_status = json.load(urllib2.urlopen(self.jenkinsUrl))
-    jobs = jenkins_status['jobs']
+    # remember previous building jobs
+    self.prevBuilding = self.categorizer.buildingJobs
 
-    # append bad jobs to prev_failed_jobs bad jobs
+    # clear out category lists 
+    self.categorizer.reset()
 
-    # clear out and re-scan
-    self.failing_jobs = set()
-    self.good_jobs = set()
-    self.building_jobs = set()
-    self.other_jobs = set()
-
-    # sort current job status into lists
+    # categorize current job status into lists
+    jobs = self.jenkinsServer.getJobs()
     for job in jobs:
-      self.analyzeJob(job)
+      self.categorizer.categorizeJob(job)
 
-    # add failing jobs to failed list
-    self.prev_failed_jobs.update(self.failing_jobs)
+    # add failing jobs to prev failed list
+    self.prevFailed.update(self.categorizer.failingJobs)
 
-    # only remove from failed list if success
-    self.prev_failed_jobs.difference_update(self.good_jobs)
+    # remove succeeding jobs from failed list
+    self.prevFailed.difference_update(self.categorizer.successJobs)
+
+    # count the consecutive successes to detect streaks
+    self.trackConsecutiveSuccess()
+
+  #
+  # if a job was previously building, is not currently building, and is success
+  # then increment success count
+  def trackConsecutiveSuccess(self):
+    # if any job is failing, reset all counts
+    if len(self.prevFailed) > 0:
+      self.successCount = set()
+    else:
+      for curJob in self.prevBuilding:
+        # if a job was building 
+        if not curJob in self.categorizer.buildingJobs.keys():
+          # and has now succeeded, increment the count
+          if curJob in self.categorizer.successJobs.keys():
+            successCount[curJob] = successCount[curJob] + 1
+          else:
+            successCount[curJob] = 0
+  
+  #
+  # check for any job with a success streak
+  #
+  def detectSuccessStreak(self):
+    minSuccessStreak = 2
+    for curJob in successCount:
+      if successCount[curJob] > minSuccessStreak:
+        successCount[curJob] = 0
+        return True
+    return False
 
   #
   # summarize all jobs into a single status value
   def summarizeJobs(self):
+
     if self.isBusinessHours():
-      # if any job has failed and not yet succeeded again
-      if len(self.prev_failed_jobs) > 0:
-        logger.info('some jobs failed:%s' % self.prev_failed_jobs)
-        self.indicator.indicateStatus('failure')
+      # if any job is failing (or has recently failed and is still building)
+      if len(self.prevFailed) > 0:
+        logger.info('some jobs failed:%s' % self.prevFailed)
+        newStatus = 'failure'
       else:
-        logger.debug('nothing failed building jobs:%s' % self.building_jobs)
-        self.indicator.indicateStatus('success')
+        logger.debug('nothing failed. building jobs:%s' % self.categorizer.buildingJobs)
+        if detectSuccessStreak():
+          newStatus = 'successStreak'
+        else:
+          newStatus = 'success'
     else:
       logger.info('outside of business hours')
-      self.indicator.indicateStatus('off')
+      newStatus = 'off'
 
+    return newStatus
+
+
+  def indicateStatus(self, newStatus):
+    # send the new status to all of the devices
+    self.indicator.indicateStatus(newStatus)
 # 
 # read config items from file
 # 
@@ -264,7 +319,8 @@ scanner = JenkinsScanner(config)
 while True:
   try:
     scanner.scanJobs()
-    scanner.summarizeJobs()
+    newStatus = scanner.summarizeJobs()
+    scanner.indicateStatus(newStatus)
   except: # catch *all* exceptions
       logger.exception("exception in loop" )
   time.sleep(waitTime)
