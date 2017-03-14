@@ -193,7 +193,7 @@ class ScannerStatus(object):
   def __init__(self):
     self.failed = set()
     self.building = set()
-    self.successCount = set()
+    self.successCount = dict()
 
   def trackBuilding(self, categorizer):
     self.building = categorizer.buildingJobs
@@ -211,13 +211,13 @@ class ScannerStatus(object):
   def trackConsecutiveSuccess(self, categorizer):
     # if any job is failing, reset all counts
     if len(self.failed) > 0:
-      self.successCount = set()
+      self.successCount = dict()
     else:
       for curJob in self.building:
         # if a job was building 
-        if not curJob in categorizer.buildingJobs.keys():
+        if not curJob in categorizer.buildingJobs:
           # and has now succeeded, increment the count
-          if curJob in categorizer.successJobs.keys():
+          if curJob in categorizer.successJobs:
             self.successCount[curJob] = self.successCount[curJob] + 1
           else:
             self.successCount[curJob] = 0
@@ -226,7 +226,7 @@ class ScannerStatus(object):
   #
   def detectSuccessStreak(self):
     minSuccessStreak = 2
-    for curJob in self.successCount:
+    for curJob in self.successCount.keys():
       if self.successCount[curJob] > minSuccessStreak:
         self.successCount[curJob] = 0
         return True
