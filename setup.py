@@ -10,4 +10,8 @@ setup(
     packages = find_packages(),
     install_requires=["holidays"],
     scripts=["start_volcanology.sh"],
+    data_files=[
+      ('config', ['config/volcanology.ini', 'config/logging_config.ini']),
+      ('bin', ['start_volcanology.sh']),
+    ],
 )
