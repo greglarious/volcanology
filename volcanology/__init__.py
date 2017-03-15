@@ -11,8 +11,26 @@ from pyHS100 import SmartPlug
 from pprint import pformat as pf
 from logging.config import fileConfig
 
-fileConfig('logging_config.ini')
+fileConfig('config/logging_config.ini')
 logger = logging.getLogger()
+
+
+def main():
+  print("startup volcanology")
+
+  #
+  # main loop
+  #
+  waitTime = 30
+  scanner = JenkinsScanner()
+  while True:
+    try:
+      scanner.scanJobs()
+      newStatus = scanner.summarizeJobs()
+      scanner.indicateStatus(newStatus)
+    except: # catch *all* exceptions
+        logger.exception("exception in loop" )
+    time.sleep(waitTime)
 
 #
 # takes summary of jenkins status and communicates to a series of external indicators
@@ -35,7 +53,7 @@ class JenkinsIndicator(object):
   # 
   # load photon status objects from config
   def loadPhotonStatus(self):
-    for statusName in dict(config.items(PhotonStatus.configSection)):
+    for statusName in dict(self.config.items(PhotonStatus.configSection)):
       logger.info('loading photon status:%s' % statusName)
       curStatus = PhotonStatus(statusName, self.config)
       self.statusTrackers[statusName] = curStatus
@@ -43,7 +61,7 @@ class JenkinsIndicator(object):
   # 
   # load hs100 plug objects from config
   def loadHS100Plugs(self):
-    for indicatorName in dict(config.items(HS100Plug.configSection)):
+    for indicatorName in dict(self.config.items(HS100Plug.configSection)):
       logger.info('loading hs100 indicator:%s' % indicatorName)
       curIndicator = HS100Plug(indicatorName, self.config)
       self.indicators[indicatorName] = curIndicator
@@ -194,6 +212,7 @@ class ScannerStatus(object):
     self.failed = set()
     self.building = set()
     self.successCount = dict()
+    self.minSuccessStreak = 6
 
   def trackBuilding(self, categorizer):
     self.building = categorizer.buildingJobs
@@ -229,9 +248,9 @@ class ScannerStatus(object):
   # check for any job with a success streak
   #
   def detectSuccessStreak(self):
-    minSuccessStreak = 2
     for curJob in self.successCount.keys():
-      if self.successCount[curJob] > minSuccessStreak:
+      if self.successCount[curJob] > self.minSuccessStreak:
+        # reset to zero to earn next streak
         self.successCount[curJob] = 0
         return True
     return False
@@ -240,8 +259,8 @@ class ScannerStatus(object):
 # scan jenkins job status and indicate summary results
 #
 class JenkinsScanner(object):
-  def __init__(self, config):
-    self.config = config
+  def __init__(self):
+    self.config = self.loadConfig()
     self.jenkinsServer = JenkinsServer(self.config)
 
     self.startBusinessHour = self.config.getint('Hours', 'Start')
@@ -251,6 +270,16 @@ class JenkinsScanner(object):
     self.indicator = JenkinsIndicator(self.config)
     self.categorizer = CategorizedJenkinsJobs(self.config)
     self.scanStatus = ScannerStatus()
+
+
+  def loadConfig(self):
+    # read config items from file
+    config = ConfigParser.ConfigParser()
+    configFile = "config/volcanology.ini"
+    if len(sys.argv) > 1 and len(sys.argv[1]) > 0:
+      configFile = sys.argv[1]
+    config.read(configFile)
+    return config
 
   def isBusinessHours(self):
     now = datetime.datetime.now()
@@ -314,25 +343,4 @@ class JenkinsScanner(object):
     # send the new status to all of the devices
     self.indicator.indicateStatus(newStatus)
 
-# 
-# read config items from file
-# 
-config = ConfigParser.ConfigParser()
-configFile = "volcanology.ini"
-if len(sys.argv) > 1 and len(sys.argv[1]) > 0:
-  configFile = sys.argv[1]
-config.read(configFile)
-
-#
-# main loop
-#
-waitTime = 30
-scanner = JenkinsScanner(config)
-while True:
-  try:
-    scanner.scanJobs()
-    newStatus = scanner.summarizeJobs()
-    scanner.indicateStatus(newStatus)
-  except: # catch *all* exceptions
-      logger.exception("exception in loop" )
-  time.sleep(waitTime)
+main()
