@@ -7,7 +7,8 @@ import datetime
 import requests
 import sys
 import holidays
-from pyHS100 import SmartPlug
+import socket
+import base64
 from pprint import pformat as pf
 from logging.config import fileConfig
 
@@ -108,7 +109,25 @@ class JenkinsIndicator(object):
 # control a TP Link wifi outlet
 #
 class HS100Plug(object):
+  turnOn='AAAAKtDygfiL/5r31e+UtsWg1Iv5nPCR6LfEsNGlwOLYo4HyhueT9tTu36Lfog=='
+  turnOff='AAAAKtDygfiL/5r31e+UtsWg1Iv5nPCR6LfEsNGlwOLYo4HyhueT9tTu3qPeow=='
+  plugPort=9999
+
   configSection = 'HS100Plugs'
+
+  def netcat(self, hostname, port, content):
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.connect((hostname, port))
+    s.sendall(content)
+    s.shutdown(socket.SHUT_WR)
+    while 1:
+        data = s.recv(1024)
+        if data == "":
+            break
+        print "Received:", repr(data)
+    print "Connection closed."
+    s.close()
+
   def __init__(self, name, config):
     self.name = name
     self.config = config
@@ -116,15 +135,13 @@ class HS100Plug(object):
     hs100config = json.loads(configJson)
     self.enabled = hs100config['Enabled']
     self.ip = hs100config['IP']
-    self.plug = SmartPlug(self.ip)
     logger.debug('new plug name:%s ip:%s' % (self.name, self.ip))
-    #logger.info("Full sysinfo: %s" % pf(greenPlug.get_sysinfo()))
 
   def indicate(self):
     if self.enabled:
       logger.debug('plug:%s turn on' % self.name)
       try:
-        self.plug.turn_on()
+        self.netcat(self.ip, self.plugPort, base64.b64decode(self.turnOn) ) 
       except: # catch *all* exceptions
         logger.exception("exception in indicate")
 
@@ -132,7 +149,7 @@ class HS100Plug(object):
     if self.enabled:
       logger.debug('plug:%s turn off' % self.name)
       try:
-        self.plug.turn_off()
+        self.netcat(self.ip, self.plugPort, base64.b64decode(self.turnOff) ) 
       except: # catch *all* exceptions
         logger.exception("exception in off" )
  
