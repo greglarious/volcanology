@@ -17,7 +17,7 @@ logger = logging.getLogger()
 
 
 def main():
-  print("startup volcanology")
+  logger.info('startup volcanology')
 
   #
   # main loop
@@ -29,7 +29,7 @@ def main():
       scanner.scanJobs()
       newStatus = scanner.summarizeJobs()
       scanner.indicateStatus(newStatus)
-    except: # catch *all* exceptions
+    except: # catch exceptions
         logger.exception("exception in loop" )
     time.sleep(waitTime)
 
@@ -124,8 +124,6 @@ class HS100Plug(object):
         data = s.recv(1024)
         if data == "":
             break
-        print "Received:", repr(data)
-    print "Connection closed."
     s.close()
 
   def __init__(self, name, config):
